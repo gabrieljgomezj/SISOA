@@ -1,15 +1,13 @@
 <?php
-/**
- * session_check.php
- *
- * Archivo de inclusión para verificar si un usuario ha iniciado sesión.
- * Si no hay una sesión activa, redirige al usuario a la página de login.
- */
-
-// Verifica si la sesión 'loggedin' no está establecida o no es verdadera.
+// includes/session_check.php
+session_start();
 if (!isset($_SESSION['loggedin']) || $_SESSION['loggedin'] !== true) {
-    // Si el usuario no está logueado, redirigirlo a la página de login.
-    header("location: login.php");
-    exit; // Detiene la ejecución del script.
+    $_SESSION['message'] = 'Por favor, inicie sesión para acceder.';
+    header('Location: ' . $root_path . 'index.php'); // Ajusta $root_path o la ruta aquí
+    exit();
+}
+// Asegurarse de que perfiles siempre sea un array
+if (!isset($_SESSION['perfiles']) || !is_array($_SESSION['perfiles'])) {
+    $_SESSION['perfiles'] = [];
 }
 ?>

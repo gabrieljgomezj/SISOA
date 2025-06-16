@@ -1,92 +1,53 @@
 <?php
-/**
- * modules/users/process_user.php
- *
- * Script para procesar acciones de usuarios como la eliminación.
- * Este script es invocado por redirecciones o llamadas AJAX.
- * Solo accesible por el perfil 'Administrador'.
- */
+// modules/users/process_user.php - Procesa acciones como eliminar usuarios
 
-session_start();
-
-// Incluye el archivo de verificación de sesión para asegurar que el usuario esté logueado.
-require_once '../../includes/session_check.php';
-
-// Verifica si el usuario logueado tiene el perfil 'Administrador'.
+require_once __DIR__ . '/../../includes/session_check.php';
 if (!in_array('Administrador', $_SESSION['perfiles'])) {
-    $_SESSION['message'] = ['type' => 'error', 'text' => 'Acceso denegado. No tiene permisos para realizar esta acción.'];
-    header("location: ../../dashboard.php");
-    exit;
+    $_SESSION['message'] = 'No tienes permiso para realizar esta acción.';
+    header('Location: ' . '../../dashboard.php');
+    exit();
 }
 
-require_once '../../includes/db_connection.php';
+require_once __DIR__ . '/../../includes/db_connection.php';
 
-// Verifica la acción a realizar
-if (isset($_GET['action']) && !empty($_GET['action'])) {
-    $action = $_GET['action'];
+$action = $_GET['action'] ?? '';
+$user_id = $_GET['id'] ?? null;
 
-    switch ($action) {
-        case 'delete':
-            if (isset($_GET['id']) && !empty(trim($_GET['id']))) {
-                $id_usuario = filter_var(trim($_GET['id']), FILTER_VALIDATE_INT);
-
-                if ($id_usuario === false) {
-                    $_SESSION['message'] = ['type' => 'error', 'text' => 'ID de usuario no válido para eliminar.'];
-                    header("location: index.php");
-                    exit();
-                }
-
-                // Iniciar una transacción para asegurar que tanto la eliminación de perfiles como del usuario sean atómicas
-                $conn->begin_transaction();
-                try {
-                    // 1. Eliminar los perfiles asociados al usuario en usuario_perfil
-                    $sql_delete_user_profiles = "DELETE FROM usuario_perfil WHERE id_usuario = ?";
-                    if ($stmt_profiles = $conn->prepare($sql_delete_user_profiles)) {
-                        $stmt_profiles->bind_param("i", $id_usuario);
-                        $stmt_profiles->execute();
-                        $stmt_profiles->close();
-                    } else {
-                        throw new Exception("Error al preparar la eliminación de perfiles de usuario: " . $conn->error);
-                    }
-
-                    // 2. Eliminar el usuario de la tabla usuarios
-                    $sql_delete_user = "DELETE FROM usuarios WHERE id_usuario = ?";
-                    if ($stmt_user = $conn->prepare($sql_delete_user)) {
-                        $stmt_user->bind_param("i", $id_usuario);
-                        if ($stmt_user->execute()) {
-                            if ($stmt_user->affected_rows > 0) {
-                                $conn->commit(); // Confirmar la transacción
-                                $_SESSION['message'] = ['type' => 'success', 'text' => 'Usuario eliminado exitosamente.'];
-                            } else {
-                                throw new Exception("No se encontró el usuario con ID " . $id_usuario . " para eliminar.");
-                            }
-                        } else {
-                            throw new Exception("Error al eliminar el usuario: " . $stmt_user->error);
-                        }
-                        $stmt_user->close();
-                    } else {
-                        throw new Exception("Error al preparar la eliminación de usuario: " . $conn->error);
-                    }
-
-                } catch (Exception $e) {
-                    $conn->rollback(); // Revertir la transacción en caso de error
-                    $_SESSION['message'] = ['type' => 'error', 'text' => 'Error al eliminar el usuario: ' . $e->getMessage()];
-                }
-            } else {
-                $_SESSION['message'] = ['type' => 'error', 'text' => 'ID de usuario no proporcionado para eliminar.'];
-            }
-            break;
-
-        // Puedes añadir más casos aquí para otras acciones (ej. activar/desactivar, resetear contraseña, etc.)
-        default:
-            $_SESSION['message'] = ['type' => 'error', 'text' => 'Acción no válida.'];
-            break;
+if ($action == 'delete' && $user_id) {
+    // Evitar que un administrador se elimine a sí mismo (opcional pero recomendado)
+    if ($_SESSION['id_usuario'] == $user_id) {
+        $_SESSION['message'] = 'No puedes eliminar tu propia cuenta de usuario.';
+        header('Location: index.php');
+        exit();
     }
+
+    // Obtener el username antes de eliminar para el mensaje de éxito/error
+    $stmt_get_username = $conn->prepare("SELECT username FROM usuarios WHERE id_usuario = ?");
+    $stmt_get_username->bind_param("i", $user_id);
+    $stmt_get_username->execute();
+    $stmt_get_username->bind_result($username_to_delete);
+    $stmt_get_username->fetch();
+    $stmt_get_username->close();
+
+    $stmt = $conn->prepare("DELETE FROM usuarios WHERE id_usuario = ?");
+    $stmt->bind_param("i", $user_id);
+
+    if ($stmt->execute()) {
+        $_SESSION['message'] = 'Usuario "' . htmlspecialchars($username_to_delete) . '" eliminado exitosamente.';
+    } else {
+        // SQLSTATE[23000]: Integrity constraint violation: 1451
+        if ($stmt->errno == 1451) {
+            $_SESSION['message'] = 'No se puede eliminar el usuario "' . htmlspecialchars($username_to_delete) . '" porque está asociado a otros registros en el sistema.';
+        } else {
+            $_SESSION['message'] = 'Error al eliminar el usuario "' . htmlspecialchars($username_to_delete) . '": ' . $stmt->error;
+        }
+    }
+    $stmt->close();
 } else {
-    $_SESSION['message'] = ['type' => 'error', 'text' => 'No se especificó ninguna acción.'];
+    $_SESSION['message'] = 'Acción inválida o ID de usuario no especificado.';
 }
 
 $conn->close();
-header("location: index.php"); // Redirige de vuelta a la lista de usuarios
-exit;
+header('Location: index.php');
+exit();
 ?>

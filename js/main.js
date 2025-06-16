@@ -2,7 +2,7 @@
  * main.js
  *
  * Archivo JavaScript principal para funcionalidades de frontend.
- * Contiene funciones para mostrar notificaciones, validaciones, etc.
+ * Contiene funciones para mostrar notificaciones, validaciones, y lógica del menú.
  */
 
 // Función para mostrar notificaciones personalizadas.
@@ -36,51 +36,106 @@ document.addEventListener('DOMContentLoaded', function() {
     // Si hay un error de login, lo muestra como notificación.
     const loginErrorDiv = document.getElementById('loginErrorNotification');
     if (loginErrorDiv) {
-        // Obtenemos el texto del error
-        const errorMessage = loginErrorDiv.textContent;
-        // Mostramos la notificación de error
-        showNotification('error', errorMessage, 6000); // Duración de 6 segundos para el login
-        // Removemos el div del DOM para evitar duplicidad y mantener el control con la función de notificación
+        const type = loginErrorDiv.dataset.type || 'error';
+        const message = loginErrorDiv.dataset.message || 'Ha ocurrido un error.';
+        showNotification(type, message);
         loginErrorDiv.remove();
     }
 
-    // Convertir todos los inputs de texto a mayúsculas al escribir
-    document.querySelectorAll('input[type="text"], input[type="email"], textarea').forEach(function(input) {
+    // Convertir inputs de texto a mayúsculas
+    document.querySelectorAll('input[type="text"]').forEach(input => {
         input.addEventListener('input', function() {
             this.value = this.value.toUpperCase();
         });
     });
-});
 
-// ... (código existente de showNotification y DOMContentLoaded) ...
+    // --- PASO CLAVE: Limpiar todas las clases 'active' de los menús al cargar la página ---
+    // Esto asegura que cada carga de página comience con un estado limpio,
+    // y solo los elementos correctos se marquen como activos por PHP/JS.
+    document.querySelectorAll('.main-nav .nav-item.active, .main-nav .submenu.active, .main-nav .submenu a.active').forEach(element => {
+        element.classList.remove('active');
+    });
 
-// Lógica para los submenús desplegables
-document.addEventListener('DOMContentLoaded', function() {
-    // ... (código existente de notificaciones y inputs a mayúsculas) ...
+    // --- Lógica para los Submenús Desplegables al hacer clic ---
+    // Selecciona todos los enlaces que son directamente hijos de un .has-submenu
+    document.querySelectorAll('.main-nav .has-submenu > .nav-link').forEach(linkItem => {
+        linkItem.addEventListener('click', function(e) {
+            e.preventDefault(); // Evita la navegación por defecto del enlace '#'
 
-    document.querySelectorAll('.has-submenu > .nav-link').forEach(item => {
-        item.addEventListener('click', function(e) {
-            e.preventDefault(); // Evita la navegación por defecto
-            const submenu = this.nextElementSibling;
-            if (submenu && submenu.classList.contains('submenu')) {
-                // Cierra otros submenús antes de abrir uno nuevo
-                document.querySelectorAll('.submenu.active').forEach(openSubmenu => {
-                    if (openSubmenu !== submenu) {
-                        openSubmenu.classList.remove('active');
+            const parentLi = this.closest('.has-submenu');
+            const submenuUl = this.nextElementSibling; // El ul.submenu es el siguiente hermano
+
+            if (!submenuUl || !submenuUl.classList.contains('submenu')) {
+                return; // No hay submenú válido, salir
+            }
+
+            // Determina si este menú está a punto de activarse
+            const isBecomingActive = !parentLi.classList.contains('active');
+
+            // Cierra todos los otros submenús hermanos en el mismo nivel
+            // y también cierra cualquier submenú anidado dentro de ellos.
+            Array.from(parentLi.parentNode.children).forEach(siblingLi => {
+                if (siblingLi.classList.contains('has-submenu') && siblingLi !== parentLi) {
+                    siblingLi.classList.remove('active');
+                    const siblingSubmenu = siblingLi.querySelector('.submenu');
+                    if (siblingSubmenu) {
+                        siblingSubmenu.classList.remove('active');
+                        // Cierra también los sub-submenús y sus padres has-submenu dentro de este submenú que se está cerrando
+                        siblingSubmenu.querySelectorAll('.has-submenu.active').forEach(nestedHasSub => {
+                            nestedHasSub.classList.remove('active');
+                            nestedHasSub.querySelector('.submenu').classList.remove('active');
+                        });
                     }
+                }
+            });
+
+            // Ahora, alternar el estado 'active' del menú clickeado
+            parentLi.classList.toggle('active', isBecomingActive); // Activa si isBecomingActive es true
+            submenuUl.classList.toggle('active', isBecomingActive); // Desactiva si isBecomingActive es false
+
+            // Si se está cerrando el menú padre, asegúrate de cerrar también todos sus descendientes
+            if (!isBecomingActive) { // Si el menú está siendo desactivado
+                parentLi.querySelectorAll('.has-submenu.active').forEach(nestedHasSub => {
+                    nestedHasSub.classList.remove('active');
+                    nestedHasSub.querySelector('.submenu').classList.remove('active');
                 });
-                submenu.classList.toggle('active');
             }
         });
     });
 
-    // Cierra cualquier submenú abierto al hacer clic fuera de él
+    // Cierra cualquier submenú abierto al hacer clic fuera del menú de navegación
     document.addEventListener('click', function(e) {
-        // Verifica si el clic no fue dentro de un elemento con submenu
-        if (!e.target.closest('.has-submenu')) {
-            document.querySelectorAll('.submenu.active').forEach(openSubmenu => {
-                openSubmenu.classList.remove('active');
+        // Verifica si el clic no fue dentro del área del menú de navegación
+        if (!e.target.closest('.main-nav')) {
+            document.querySelectorAll('.main-nav .has-submenu.active').forEach(openParentLi => {
+                openParentLi.classList.remove('active');
+                openParentLi.querySelectorAll('.submenu.active').forEach(openSubmenu => {
+                    openSubmenu.classList.remove('active');
+                    // Asegurarse de que también el li padre se desactive si es un sub-submenú
+                    openSubmenu.closest('.has-submenu').classList.remove('active');
+                });
             });
+        }
+    });
+
+    // --- Activación de menús al cargar la página (basado en la URL) ---
+    // Mantener los elementos de menú "activos" si su enlace o sub-enlace es la página actual.
+    // Esto asegura que los menús desplegables se abran por defecto si su contenido está activo.
+    // Esta lógica debe ejecutarse DESPUÉS de la limpieza inicial y la configuración de clics.
+    document.querySelectorAll('.submenu a.active').forEach(activeSubItem => {
+        let currentElement = activeSubItem;
+        while (currentElement) {
+            const parentSubmenu = currentElement.closest('.submenu');
+            if (parentSubmenu) {
+                parentSubmenu.classList.add('active');
+                const parentHasSubmenu = parentSubmenu.closest('.has-submenu');
+                if (parentHasSubmenu) {
+                    parentHasSubmenu.classList.add('active');
+                }
+                currentElement = parentHasSubmenu; // Sube al siguiente nivel (al parent has-submenu)
+            } else {
+                currentElement = null; // Detener si no hay más submenús padres
+            }
         }
     });
 });
