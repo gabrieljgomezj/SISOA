@@ -45,9 +45,6 @@ try {
 }
 
 $conn->close();
-
-// Obtener la URI actual para marcar el menú activo en main_header.php
-$current_uri_path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 ?>
 <!DOCTYPE html>
 <html lang="es">
